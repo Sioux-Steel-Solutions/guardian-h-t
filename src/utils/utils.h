@@ -32,8 +32,8 @@
 #define UART_MAX 0xFF
 
 // Temporary hardcoded credentials for Gen 2 testing
-#define GEN2_TEST_SSID "YOUR_WIFI_SSID"
-#define GEN2_TEST_PASSWORD "YOUR_WIFI_PASSWORD"
+#define GEN2_TEST_SSID "NBSJK"
+#define GEN2_TEST_PASSWORD "12345679"
 #define GEN2_TEST_USERID "test-user-id-123"
 #define GEN2_TEST_DEVICEID "test-device-id-456"
 struct Config {
