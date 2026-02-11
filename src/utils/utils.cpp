@@ -1047,7 +1047,13 @@ void bruteForceI2CRegisters(uint8_t deviceAddress) {
 
 
 String getDeviceId() {
-    // Temporary storage for the Config struct
+    // Gen 2: Use in-memory storedConfig (set by hardcoded credentials)
+    // Check if storedConfig has a valid deviceId first
+    if (storedConfig.deviceId[0] != '\0') {
+        return String(storedConfig.deviceId);
+    }
+
+    // Fallback: Try to read from EEPROM    // Temporary storage for the Config struct
     Config tempConfig;
 
     // Read data from EEPROM into tempConfig
@@ -1078,6 +1084,13 @@ String getDeviceId() {
 
 
 String getUserId() {
+    // Gen 2: Use in-memory storedConfig (set by hardcoded credentials)
+    // Check if storedConfig has a valid uuid first
+    if (storedConfig.uuid[0] != '\0') {
+        return String(storedConfig.uuid);
+    }
+
+    // Fallback: Try to read from EEPROM
     // Temporary storage for the Config struct
     Config tempConfig;
 

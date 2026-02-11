@@ -109,7 +109,7 @@ void setup() {
     Serial.println("[GEN2 TEST MODE] Using hardcoded WiFi credentials");
     if (connectToWiFi(GEN2_TEST_SSID, GEN2_TEST_PASSWORD)) {
         Serial.println("WiFi connected successfully");
-        digitalWrite(GEN2_LED_PIN, LOW);  // LED off when connected
+        digitalWrite(GEN2_LED_PIN, HIGH);  // LED ON when WiFi connected!
 
         // Synchronize time
         synchronizeTime();
@@ -124,9 +124,7 @@ void setup() {
         // Connect to MQTT
         if (connectToMQTT()) {
             Serial.println("MQTT Connected Successfully");
-            digitalWrite(GEN2_LED_PIN, HIGH);  // Blink to confirm MQTT
-            delay(500);
-            digitalWrite(GEN2_LED_PIN, LOW);
+            // LED stays ON - already HIGH from WiFi connection
         } else {
             Serial.println("Failed to Connect to MQTT Broker");
         }
@@ -210,10 +208,10 @@ void loop() {
                 // Publish to MQTT
                 sendSensorMessage(data.temperature, data.humidity);
 
-                // Blink LED to indicate successful reading
-                digitalWrite(GEN2_LED_PIN, HIGH);
-                delay(100);
+                // Brief blink (LED stays ON when connected, blinks OFF for 100ms)
                 digitalWrite(GEN2_LED_PIN, LOW);
+                delay(100);
+                digitalWrite(GEN2_LED_PIN, HIGH);  // Back to ON
             } else {
                 Serial.println("[GEN2] Sensor read failed!");
             }
