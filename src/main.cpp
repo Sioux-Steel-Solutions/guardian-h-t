@@ -109,7 +109,15 @@ void setup() {
     Serial.println("[GEN2 TEST MODE] Using hardcoded WiFi credentials");
     if (connectToWiFi(GEN2_TEST_SSID, GEN2_TEST_PASSWORD)) {
         Serial.println("WiFi connected successfully");
-        digitalWrite(GEN2_LED_PIN, HIGH);  // LED ON when WiFi connected!
+
+        // Brief LED blink to confirm WiFi
+        digitalWrite(GEN2_LED_PIN, HIGH);
+        delay(500);
+        digitalWrite(GEN2_LED_PIN, LOW);  // Turn OFF to reduce heat
+
+        // Enable WiFi modem sleep for power saving (maintains connection)
+        WiFi.setSleep(WIFI_PS_MIN_MODEM);
+        Serial.println("[POWER SAVE] WiFi modem sleep enabled");
 
         // Synchronize time
         synchronizeTime();
@@ -124,7 +132,10 @@ void setup() {
         // Connect to MQTT
         if (connectToMQTT()) {
             Serial.println("MQTT Connected Successfully");
-            // LED stays ON - already HIGH from WiFi connection
+            // Brief LED blink to confirm MQTT
+            digitalWrite(GEN2_LED_PIN, HIGH);
+            delay(300);
+            digitalWrite(GEN2_LED_PIN, LOW);  // Turn OFF to reduce heat
         } else {
             Serial.println("Failed to Connect to MQTT Broker");
         }
@@ -202,18 +213,22 @@ void loop() {
             lastAttempt = now;
 
             Serial.println("[GEN2] Reading HDC1080 sensor...");
+
+            // LED ON during sensor read and publish
+            digitalWrite(GEN2_LED_PIN, HIGH);
+
             SensorData data = readHDC1080Data();
 
             if (data.success) {
                 // Publish to MQTT
                 sendSensorMessage(data.temperature, data.humidity);
 
-                // Brief blink (LED stays ON when connected, blinks OFF for 100ms)
+                // LED OFF after successful publish (reduces heat)
+                delay(100);  // Keep LED on briefly to show activity
                 digitalWrite(GEN2_LED_PIN, LOW);
-                delay(100);
-                digitalWrite(GEN2_LED_PIN, HIGH);  // Back to ON
             } else {
                 Serial.println("[GEN2] Sensor read failed!");
+                digitalWrite(GEN2_LED_PIN, LOW);  // Turn off even on failure
             }
         }
         delay(100);
