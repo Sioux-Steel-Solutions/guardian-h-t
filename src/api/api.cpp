@@ -2,25 +2,23 @@
 #include "../utils/utils.h"
 #include <ArduinoJson.h> // Include ArduinoJson library
 
-#define SHELLY_BUILTIN_LED 0
-
 // Wi-Fi scan results
 String scanResults;
 bool scanCompleted = false;
 
-void setupApiRoutes(ESP8266WebServer &server) {
+void setupApiRoutes(WebServer &server) {
     server.on("/", HTTP_GET, [&server]() {
         Serial.println("Hit /");
         sendResponse(server, 200, "{\"status\":\"success\"}");
     });
 
     server.on("/led/on", HTTP_GET, [&server]() {
-        digitalWrite(SHELLY_BUILTIN_LED, LOW);
+        digitalWrite(GEN2_LED_PIN, HIGH);  // Gen 2: active HIGH
         sendResponse(server, 200, "{\"status\":\"LED turned on\"}");
     });
 
     server.on("/led/off", HTTP_GET, [&server]() {
-        digitalWrite(SHELLY_BUILTIN_LED, HIGH);
+        digitalWrite(GEN2_LED_PIN, LOW);  // Gen 2: active LOW
         sendResponse(server, 200, "{\"status\":\"LED turned off\"}");
     });
 
@@ -64,21 +62,25 @@ void setupApiRoutes(ESP8266WebServer &server) {
             wifi["signal_level"] = WiFi.RSSI(i);
             wifi["channel"] = WiFi.channel(i);
 
+            // ESP32 uses different encryption type constants
             switch (WiFi.encryptionType(i)) {
-                case ENC_TYPE_NONE:
+                case WIFI_AUTH_OPEN:
                     wifi["security"] = "Open";
                     break;
-                case ENC_TYPE_WEP:
+                case WIFI_AUTH_WEP:
                     wifi["security"] = "WEP";
                     break;
-                case ENC_TYPE_TKIP:
+                case WIFI_AUTH_WPA_PSK:
                     wifi["security"] = "WPA/PSK";
                     break;
-                case ENC_TYPE_CCMP:
+                case WIFI_AUTH_WPA2_PSK:
                     wifi["security"] = "WPA2/PSK";
                     break;
-                case ENC_TYPE_AUTO:
-                    wifi["security"] = "Auto";
+                case WIFI_AUTH_WPA_WPA2_PSK:
+                    wifi["security"] = "WPA/WPA2/PSK";
+                    break;
+                case WIFI_AUTH_WPA2_ENTERPRISE:
+                    wifi["security"] = "WPA2 Enterprise";
                     break;
                 default:
                     wifi["security"] = "Unknown";

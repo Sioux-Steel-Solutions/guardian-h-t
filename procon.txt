@@ -1,0 +1,23 @@
+We are considering using a mesh network for guardian. 
+
+when disucssing guardian gen 2
+
+
+
+If we used mesh:
+    We could achieve a longer battery life.
+    We would be able to access a different kind of sleep mode that does not require the modem.
+`   Setup could be much easier, potential for patentability
+    Setup would only work if power was provided to a relay
+    We would lose the simplicity of the original line of Guardian sensors, you can trhow them anywhere (haybale, soil, grain bin)
+
+
+
+If we keep it wifi
+    We would not be able to achieve BOTH (good battery, responsive behavior)
+    Device turns on, then immediately enters a hard sleep, cannot wake it up until it takes another reading
+    unresponsive to users trying to wake the device.
+    This deep sleep is needed to put the device into a power mode that will make the battery last for a year.
+    If we didn't sleep, or used modem sleep, we would need a literal car battery to keep it on for a year, and even then, thats stretching it.
+
+

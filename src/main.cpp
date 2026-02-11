@@ -1,6 +1,6 @@
 #include <Arduino.h>
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
+#include <WiFi.h>
+#include <WebServer.h>
 #include <EEPROM.h>
 #include <PubSubClient.h>
 #include <Wire.h>
@@ -11,7 +11,7 @@
 #include "api/api.h"
 
 // Web server on port 80
-ESP8266WebServer server(80);
+WebServer server(80);
 
 // Timer variables
 unsigned long lastPublishTime = 0;
@@ -40,7 +40,7 @@ void startAccessPoint() {
     WiFi.softAP("Guardian_GMS_Sensor", "");
     Serial.print("Access point IP: ");
     Serial.println(WiFi.softAPIP());
-    digitalWrite(SHELLY_BUILTIN_LED, LOW);
+    digitalWrite(GEN2_LED_PIN, HIGH);  // LED on in AP mode
 }
 
 void synchronizeTime() {
@@ -61,35 +61,36 @@ void synchronizeTime() {
 void setup() {
     Serial.begin(115200);
     while (!Serial) { ; }
-    Serial.println("\nFirmware Started");
-    
-    pinMode(PIN_HSPI_MISO, SPECIAL);
-    pinMode(PIN_HSPI_MOSI, SPECIAL);
-    pinMode(PIN_HSPI_SCLK, SPECIAL);
-    pinMode(PIN_HSPI_CS,   OUTPUT);
-    digitalWrite(PIN_HSPI_CS, HIGH); // De-select chip
+    Serial.println("\n[GEN2] Firmware Started - ESP32-C3 + HDC1080");
 
-    pinMode(PIN_RESET, OUTPUT);
-    digitalWrite(PIN_RESET, HIGH); // Keep Shelly's secondary MCU out of reset
+    // Initialize LED (Gen 2)
+    pinMode(GEN2_LED_PIN, OUTPUT);
+    digitalWrite(GEN2_LED_PIN, LOW);  // LED off initially
 
-    // Setup the SPI bus at the desired freq & mode
-    hspiSetup();
-
-    // Wake the sensor
-    wakeUpSensor();
-
-
-    // Initialize sensor settings
-    sendCmd_PreventSleep();
-    sendCmd_LED(LED_STATUS_BLINK_SLOW);
-
+    // Initialize EEPROM
     EEPROM.begin(512);
 
+    // Initialize HDC1080 sensor
+    if (!initHDC1080()) {
+        Serial.println("[ERROR] HDC1080 initialization failed!");
+        digitalWrite(GEN2_LED_PIN, HIGH);  // Turn on LED to indicate error
+        while(1) { delay(1000); }  // Halt if sensor fails
+    }
 
+    // Blink LED to indicate successful initialization
+    for (int i = 0; i < 3; i++) {
+        digitalWrite(GEN2_LED_PIN, HIGH);
+        delay(200);
+        digitalWrite(GEN2_LED_PIN, LOW);
+        delay(200);
+    }
+
+    // Gen 1 EEPROM/AP logic (COMMENTED OUT for Gen 2 testing)
+    /*
     if (checkForWifiAndUser()) {
         if (connectToWiFi(String(storedConfig.ssid), String(storedConfig.password))) {
             Serial.println("Connected to WiFi successfully.");
-            digitalWrite(SHELLY_BUILTIN_LED, HIGH);
+            digitalWrite(GEN2_LED_PIN, LOW);
         } else {
             Serial.println("WiFi connection failed, starting Access Point...");
             startAccessPoint();
@@ -99,25 +100,48 @@ void setup() {
         startAccessPoint();
     }
 
-    if (WiFi.status() == WL_CONNECTED) {
-        synchronizeTime();
-    } else {
-        Serial.println("WiFi not connected. Unable to synchronize time.");
-    }
-
     setupApiRoutes(server);
     server.begin();
     Serial.println("Web Server Started");
+    */
 
-    if (doesUserExist && WiFi.status() == WL_CONNECTED) {
+    // Gen 2 - Hardcoded credentials for testing
+    Serial.println("[GEN2 TEST MODE] Using hardcoded WiFi credentials");
+    if (connectToWiFi(GEN2_TEST_SSID, GEN2_TEST_PASSWORD)) {
+        Serial.println("WiFi connected successfully");
+        digitalWrite(GEN2_LED_PIN, LOW);  // LED off when connected
+
+        // Synchronize time
+        synchronizeTime();
+
+        // Set up test user credentials (bypass EEPROM)
+        strncpy(storedConfig.ssid, GEN2_TEST_SSID, MAX_SSID_LENGTH);
+        strncpy(storedConfig.password, GEN2_TEST_PASSWORD, MAX_PASSWORD_LENGTH);
+        strncpy(storedConfig.uuid, GEN2_TEST_USERID, UUID_LENGTH);
+        strncpy(storedConfig.deviceId, GEN2_TEST_DEVICEID, DEVICEID_LENGTH);
+        doesUserExist = true;
+
+        // Connect to MQTT
         if (connectToMQTT()) {
-            Serial.println("MQTT Connected Successfully.");
+            Serial.println("MQTT Connected Successfully");
+            digitalWrite(GEN2_LED_PIN, HIGH);  // Blink to confirm MQTT
+            delay(500);
+            digitalWrite(GEN2_LED_PIN, LOW);
         } else {
-            Serial.println("Failed to Connect to MQTT Broker.");
+            Serial.println("Failed to Connect to MQTT Broker");
+        }
+    } else {
+        Serial.println("WiFi connection failed!");
+        // Blink LED rapidly to indicate error
+        while(1) {
+            digitalWrite(GEN2_LED_PIN, HIGH);
+            delay(200);
+            digitalWrite(GEN2_LED_PIN, LOW);
+            delay(200);
         }
     }
 
-    // Initialize I²C
+    Serial.println("[GEN2] Setup complete");
 }
 
 void keepAliveI2C() {
@@ -132,7 +156,7 @@ void keepAliveI2C() {
 }
 
 void loop() {
-    server.handleClient();
+    // server.handleClient();  // Gen 2: Web server disabled for testing
     unsigned long currentMillis = millis();
 
     // WiFi Reconnect
@@ -173,15 +197,30 @@ void loop() {
         }
         mqttClient.loop();
 
+        // Gen 2 - Read HDC1080 and publish to MQTT
         static unsigned long lastAttempt = 0;
         unsigned long now = millis();
-        if (now - lastAttempt >= 60000) { // Every 5 seconds
+        if (now - lastAttempt >= 60000) { // Every 60 seconds
             lastAttempt = now;
-            readShellyHTData();
+
+            Serial.println("[GEN2] Reading HDC1080 sensor...");
+            SensorData data = readHDC1080Data();
+
+            if (data.success) {
+                // Publish to MQTT
+                sendSensorMessage(data.temperature, data.humidity);
+
+                // Blink LED to indicate successful reading
+                digitalWrite(GEN2_LED_PIN, HIGH);
+                delay(100);
+                digitalWrite(GEN2_LED_PIN, LOW);
+            } else {
+                Serial.println("[GEN2] Sensor read failed!");
+            }
         }
         delay(100);
 
-      
+
     }
     
 }

@@ -7,7 +7,7 @@
 #include <WiFiClient.h>
 #include <PubSubClient.h>
 #include <Wire.h>
-#include <ClosedCube_HDC1080.h>
+#include <Adafruit_HDC1000.h>
 #include <string.h>
 #include <stdlib.h>
 #include <cmath>
@@ -15,7 +15,7 @@
 
 // Global Variables
 Config storedConfig;
-ClosedCube_HDC1080 hdc;
+Adafruit_HDC1000 hdc = Adafruit_HDC1000();
 
 String getPubTopic(){
     String userId = getUserId();
@@ -172,7 +172,7 @@ bool checkForWifiAndUser() {
 
 
 // Send HTTP Response with CORS Headers
-void sendResponse(WebServer &server, int statusCode, const String &content) {
+void sendResponse(ESP8266WebServer &server, int statusCode, const String &content) {
     // Debug output
     Serial.printf("[DEBUG] Sending response with status code %d, content: %s\n", statusCode, content.c_str());
 
@@ -185,11 +185,11 @@ void sendResponse(WebServer &server, int statusCode, const String &content) {
     server.send(statusCode, "application/json", content);
 }
 
-// Flash LED (Gen 2)
+// Flash LED (Example Function)
 void flashLED() {
-    digitalWrite(GEN2_LED_PIN, HIGH);  // Turn LED on
+    digitalWrite(SHELLY_BUILTIN_LED, LOW);  // Turn LED on
     delay(500);
-    digitalWrite(GEN2_LED_PIN, LOW);   // Turn LED off
+    digitalWrite(SHELLY_BUILTIN_LED, HIGH); // Turn LED off
     delay(500);
 }
 
@@ -197,8 +197,8 @@ void flashLED() {
 bool connectToWiFi(const String& ssid, const String& password) {
     Serial.println("Attempting to connect to WiFi...");
 
-    // Turn on the LED (solid, indicating connection attempt) - Gen 2
-    digitalWrite(GEN2_LED_PIN, HIGH);
+    // Turn on the LED (solid, indicating connection attempt)
+    digitalWrite(SHELLY_BUILTIN_LED, LOW);
 
     // Disconnect any previous connection
     WiFi.disconnect();
@@ -221,7 +221,7 @@ bool connectToWiFi(const String& ssid, const String& password) {
         Serial.print("IP address: ");
         Serial.println(WiFi.localIP());
         Serial.printf("Signal Strength: %d dBm\n", WiFi.RSSI());
-        digitalWrite(GEN2_LED_PIN, LOW);  // Gen 2: Turn LED off when connected
+        digitalWrite(SHELLY_BUILTIN_LED, HIGH);
 
         doesUserExist = true;
         return true;
@@ -344,92 +344,28 @@ void publishMessage(const char* topic, const char* message) {
     }
 }
 
-// ------------------------------------------------------------
-// HDC1080 Sensor Functions (Gen 2)
-// ------------------------------------------------------------
-
-bool initHDC1080() {
-    Serial.println("[HDC1080] Initializing sensor...");
-
-    // Initialize I2C with custom pins
-    Wire.begin(HDC1080_SDA_PIN, HDC1080_SCL_PIN);
-
-    // Initialize sensor (ClosedCube library)
-    hdc.begin(HDC1080_I2C_ADDR);
-
-    // Read manufacturer ID to verify sensor connection
-    uint16_t manufacturerID = hdc.readManufacturerId();
-    if (manufacturerID != 0x5449) {  // TI manufacturer ID
-        Serial.println("[HDC1080] ERROR: Failed to communicate with HDC1080!");
-        Serial.print("[HDC1080] Expected manufacturer ID: 0x5449, Got: 0x");
-        Serial.println(manufacturerID, HEX);
-        Serial.println("[HDC1080] Check wiring and I2C address (should be 0x40)");
-        return false;
-    }
-
-    Serial.println("[HDC1080] Sensor initialized successfully");
-    Serial.print("[HDC1080] I2C Address: 0x");
-    Serial.println(HDC1080_I2C_ADDR, HEX);
-    Serial.print("[HDC1080] Manufacturer ID: 0x");
-    Serial.println(manufacturerID, HEX);
-
-    return true;
-}
-
-SensorData readHDC1080Data() {
+// Read Sensor Data
+SensorData readSensorData() {
     SensorData data;
-    data.success = false;
 
-    // Read temperature and humidity (ClosedCube library)
-    float temperature = hdc.readTemperature();
-    float humidity = hdc.readHumidity();
+    // Read humidity and temperature
+    float temperature = 0.0f;
+    float humidity = 0.0f;
 
-    // Check for valid readings
-    if (isnan(temperature) || isnan(humidity)) {
-        Serial.println("[HDC1080] ERROR: Failed to read sensor data");
+    if (sensor.GetHumidity(&humidity) != HTS221_STATUS_OK ||
+        sensor.GetTemperature(&temperature) != HTS221_STATUS_OK) {
+        Serial.println("Failed to read sensor data!");
+        data.success = false;
         return data;
     }
 
-    // Populate sensor data
     data.temperature = temperature;
     data.humidity = humidity;
     data.success = true;
 
-    // Log readings
     REPORT_TEMPHUM(data.temperature, data.humidity);
 
     return data;
-}
-
-void testHDC1080() {
-    Serial.println("\n[HDC1080] Running sensor test...");
-
-    // Test I2C communication
-    Wire.beginTransmission(HDC1080_I2C_ADDR);
-    byte error = Wire.endTransmission();
-
-    if (error == 0) {
-        Serial.println("[HDC1080] I2C communication OK");
-    } else {
-        Serial.print("[HDC1080] I2C error code: ");
-        Serial.println(error);
-        return;
-    }
-
-    // Read and display data
-    SensorData data = readHDC1080Data();
-    if (data.success) {
-        Serial.println("[HDC1080] Test PASSED");
-        Serial.printf("  Temperature: %.2f°C\n", data.temperature);
-        Serial.printf("  Humidity: %.2f%%\n", data.humidity);
-    } else {
-        Serial.println("[HDC1080] Test FAILED");
-    }
-}
-
-// Read Sensor Data (Gen 2 - HDC1080)
-SensorData readSensorData() {
-    return readHDC1080Data();  // Delegate to HDC1080 function
 }
 
 
@@ -1045,6 +981,272 @@ void bruteForceI2CRegisters(uint8_t deviceAddress) {
     }
 }
 
+// ------------------------------------------------------------
+// Implementation: HSPI Setup & Transfer
+// ------------------------------------------------------------
+void hspiSetup() {
+    SPI.begin();
+    SPI.beginTransaction(SPISettings(HSPI_FREQ, HSPI_BITORDER, HSPI_MODE));
+}
+
+void hspiTransfer(const uint8_t* out, uint8_t* in, uint32_t len) {
+    digitalWrite(PIN_HSPI_CS, LOW);
+    delayMicroseconds(10);
+
+    for (uint32_t i = 0; i < len; i++) {
+        in[i] = SPI.transfer(out[i]);
+    }
+
+    digitalWrite(PIN_HSPI_CS, HIGH);
+    delayMicroseconds(10);
+}
+
+// ------------------------------------------------------------
+// Implementation: Commands & Frames
+// ------------------------------------------------------------
+void readShellyHTData() {
+    // Reset the MCU
+    digitalWrite(PIN_RESET, LOW);
+    delay(1);
+    digitalWrite(PIN_RESET, HIGH);
+    delay(100); // Wait for MCU to initialize
+
+    // Turn LED off
+    sendCmd_LED(LED_STATUS_OFF);
+
+    // Send READ_MEASUREMENTS command
+    sendCmd_ReadMeasurements();
+
+    // Receive measurements
+    double temperature = UNDEFINED, humidity = UNDEFINED;
+    if (recvMeasurements(&temperature, &humidity)) {
+        //log out to serial UUART
+        REPORT_TEMPHUM(temperature, humidity);
+
+        //send sensor readings to broker
+        sendSensorMessage(temperature, humidity);
+    }
+
+    // Send additional commands
+    sendCmd_06();
+    sendCmd_07();
+
+    // Receive dummy bytes (optional)
+    uint8_t fillBuf[5];
+    memset(fillBuf, FILL_BYTE, 5);
+    uint8_t readBuf[5];
+    hspiTransfer(fillBuf, readBuf, 5);
+}
+
+// Send READ_MEASUREMENTS command
+bool sendCmd_ReadMeasurements() {
+    uint8_t frmLen = 0;
+    uint8_t* mosi = makeMOSIFrame(CMD_READ_MEASUREMENTS, nullptr, 0, &frmLen);
+    if (!mosi) return false;
+
+    uint8_t miso[64];
+    memset(miso, 0, sizeof(miso));
+
+    hspiTransfer(mosi, miso, frmLen);
+    free(mosi);
+
+    return misoFrameValid(miso, frmLen);
+}
+
+// Receive measurements
+bool recvMeasurements(double* temperature, double* humidity) {
+    uint8_t* fillFrame = makeMOSIFillFrame(12);
+    if (!fillFrame) return false;
+
+    uint8_t miso[12];
+    memset(miso, 0, 12);
+
+    hspiTransfer(fillFrame, miso, 12);
+    free(fillFrame);
+
+    bool validFrame = misoFrameValid(miso, 12);
+
+    // Parse temperature and humidity
+    int16_t temp8 = ((int16_t)miso[7] << 8) | miso[8];
+    double t = (double)temp8 / 8.0;
+    double h = (double)miso[10] / 2.0;
+
+    *temperature = t;
+    *humidity    = h;
+
+    // Verify checksum (optional)
+    uint8_t calculated_checksum = miso[0];
+    for (int i = 1; i < 11; i++) {
+        calculated_checksum ^= miso[i];
+    }
+    calculated_checksum = 0xFF - calculated_checksum;
+
+    // You can choose to handle checksum mismatches if needed
+
+    return true; // Return true even if frame is invalid to report data
+}
+
+// Send LED command
+bool sendCmd_LED(uint8_t led_status) {
+    uint8_t data[2] = { led_status, 0x04 };
+    uint8_t frmLen = 0;
+    uint8_t* mosi = makeMOSIFrame(CMD_LED, data, 2, &frmLen);
+    if (!mosi) return false;
+
+    uint8_t miso[64];
+    memset(miso, 0, sizeof(miso));
+
+    hspiTransfer(mosi, miso, frmLen);
+    free(mosi);
+
+    return misoFrameValid(miso, frmLen);
+}
+
+// Send PREVENT_SLEEP command
+bool sendCmd_PreventSleep() {
+    uint8_t frmLen = 0;
+    uint8_t* mosi = makeMOSIFrame(CMD_PREVENT_SLEEP, nullptr, 0, &frmLen);
+    if (!mosi) return false;
+
+    uint8_t miso[64];
+    memset(miso, 0, sizeof(miso));
+
+    hspiTransfer(mosi, miso, frmLen);
+    free(mosi);
+
+    return misoFrameValid(miso, frmLen);
+}
+
+// Send UNKNOWN_06 command
+bool sendCmd_06() {
+    uint8_t frmLen = 0;
+    uint8_t* mosi = makeMOSIFrame(CMD_UNKNOWN_06, nullptr, 0, &frmLen);
+    if (!mosi) return false;
+
+    uint8_t miso[64];
+    memset(miso, 0, sizeof(miso));
+
+    hspiTransfer(mosi, miso, frmLen);
+    free(mosi);
+
+    return misoFrameValid(miso, frmLen);
+}
+
+// Send UNKNOWN_07 command
+bool sendCmd_07() {
+    uint8_t data[5] = {0, 0, 0, 0, 0};
+    uint8_t frmLen = 0;
+    uint8_t* mosi = makeMOSIFrame(CMD_UNKNOWN_07, data, 5, &frmLen);
+    if (!mosi) return false;
+
+    uint8_t miso[64];
+    memset(miso, 0, sizeof(miso));
+
+    hspiTransfer(mosi, miso, frmLen);
+    free(mosi);
+
+    return misoFrameValid(miso, frmLen);
+}
+
+// ------------------------------------------------------------
+// Frame-building & Validation
+// ------------------------------------------------------------
+uint8_t* makeMOSIFrame(uint8_t cmd, const uint8_t* data, uint8_t data_len, uint8_t* out_len) {
+    // Frame size = 2(header) +1(cmd) +1(len) + data_len +1(chksum) +2(footer)
+    uint8_t totalLen = 2 + 1 + 1 + data_len + 1 + 2;
+    *out_len = totalLen;
+
+    uint8_t* frame = (uint8_t*) malloc(totalLen);
+    if (!frame) return nullptr;
+
+    uint8_t* p = frame;
+    // Header
+    *(p++) = HEADER_BYTE1;
+    *(p++) = HEADER_BYTE2;
+    // Command
+    *(p++) = cmd;
+    // Data length
+    *(p++) = data_len;
+
+    // Data
+    if (data_len && data) {
+        memcpy(p, data, data_len);
+        p += data_len;
+    }
+
+    // Checksum: 0xFF - XOR(cmd, data_len, data[])
+    uint8_t cs = cmd ^ data_len;
+    for (uint8_t i = 0; i < data_len; i++) {
+        cs ^= data[i];
+    }
+    cs = 0xFF - cs;
+    *(p++) = cs;
+
+    // Footer
+    *(p++) = FOOTER_BYTE1;
+    *(p++) = FOOTER_BYTE2;
+
+    return frame;
+}
+
+uint8_t* makeMOSIFillFrame(uint8_t len) {
+    uint8_t* frame = (uint8_t*) malloc(len);
+    if (!frame) return nullptr;
+    memset(frame, FILL_BYTE, len);
+    return frame;
+}
+
+// Validate MISO frame
+bool misoFrameValid(const uint8_t* frame, uint8_t frame_len) {
+    if (frame_len < 2) return false;
+    return (frame[0] == FILL_BYTE) && (frame[frame_len - 1] == SLAVE_FOOTER_BYTE2);
+}
+
+ void wakeUpSensor() {
+    digitalWrite(PIN_HSPI_CS, LOW);
+    delay(100);
+    digitalWrite(PIN_HSPI_CS, HIGH);
+    delay(100);
+}
+
+void resetLowPowerMCU() {
+    digitalWrite(PIN_RESET, LOW);
+    delay(100);
+    digitalWrite(PIN_RESET, HIGH);
+    delay(100);
+}
+
+void setupSTM(){
+   // HSPI pin modes
+    pinMode(PIN_HSPI_MISO, SPECIAL);
+    pinMode(PIN_HSPI_MOSI, SPECIAL);
+    pinMode(PIN_HSPI_SCLK, SPECIAL);
+    pinMode(PIN_HSPI_CS,   OUTPUT);
+    digitalWrite(PIN_HSPI_CS, HIGH); // De-select
+
+    pinMode(PIN_RESET, OUTPUT);
+    digitalWrite(PIN_RESET, HIGH); // Keep Shelly's secondary MCU out of reset
+
+    // Setup the SPI bus at the desired freq & mode
+    hspiSetup();
+
+    // Wake the sensor
+    wakeUpSensor();
+
+    // Initialize sensor settings
+    sendCmd_PreventSleep();
+    sendCmd_LED(LED_STATUS_BLINK_SLOW);
+}
+
+void sensorLoop(){
+  unsigned long lastAttempt = 0;
+    unsigned long now = millis();
+    if (now - lastAttempt >= 5000) { // Every 5 seconds
+        lastAttempt = now;
+        readShellyHTData();
+    }
+    delay(100);
+}
 
 String getDeviceId() {
     // Temporary storage for the Config struct
