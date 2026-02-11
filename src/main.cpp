@@ -198,7 +198,7 @@ void loop() {
         // Gen 2 - Read HDC1080 and publish to MQTT
         static unsigned long lastAttempt = 0;
         unsigned long now = millis();
-        if (now - lastAttempt >= 60000) { // Every 60 seconds
+        if (now - lastAttempt >= 5000) { // Every 5 seconds
             lastAttempt = now;
 
             Serial.println("[GEN2] Reading HDC1080 sensor...");
